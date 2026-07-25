@@ -1,0 +1,6 @@
+{
+  "id": "pet-chat",
+  "version": "0.1.0-dev",
+  "source_commit": "set-by-build",
+  "entry": "plugin.js"
+}
