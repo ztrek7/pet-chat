@@ -1,0 +1,10 @@
+{
+  "name": "pet-chat",
+  "label": "Pet Chat",
+  "description": "Pet Chat's backend: settings, readiness, and every gate a prompt clears before a provider sees it.",
+  "icon": "MessageCircle",
+  "version": "0.1.0-dev",
+  "tab": { "hidden": true },
+  "slots": [],
+  "api": "plugin_api.py"
+}
