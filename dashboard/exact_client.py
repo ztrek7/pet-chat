@@ -115,17 +115,25 @@ def _retries_are_disabled(client: Any) -> bool:
     return False
 
 
-def _models_match(requested: str, resolved: Any) -> bool:
-    """Confirm the resolver handed back the model we asked for.
+def _normalize_model_id(model: str) -> str:
+    """Strip + casefold; allow a single ``vendor/`` prefix, nothing else.
 
-    Providers legitimately decorate a slug (prefixing a namespace, appending a
-    dated revision), so containment either way counts as the same model; an
-    unrelated slug does not.
+    Bidirectional substring matching is intentionally not used: ``gpt-4`` must
+    not accept ``gpt-4o`` or ``gpt-4-turbo``.
     """
-    if not isinstance(resolved, str) or not resolved:
+    value = model.strip().lower()
+    if "/" in value:
+        vendor, rest = value.split("/", 1)
+        if vendor and rest and "/" not in rest:
+            return rest
+    return value
+
+
+def _models_match(requested: str, resolved: Any) -> bool:
+    """Confirm the resolver handed back the model we asked for."""
+    if not isinstance(resolved, str) or not resolved.strip():
         return False
-    a, b = requested.strip().lower(), resolved.strip().lower()
-    return a == b or a in b or b in a
+    return _normalize_model_id(requested) == _normalize_model_id(resolved)
 
 
 def resolve_exact(provider: str, model: str) -> Tuple[Any, str]:
