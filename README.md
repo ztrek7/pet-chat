@@ -7,8 +7,8 @@ Pet Chat gives it one. Every prompt you send, the pet reads and reacts to in a
 single line beside itself. Send a two-word prompt with a typo in it and the pet
 has opinions about both.
 
-It doesn't touch your actual message. The quip shows up on its own, a second or
-two later, or not at all.
+It doesn't touch your actual message. The quip shows up on its own a few seconds
+later, or not at all.
 
 > Built against Hermes Agent **v0.19.0** using an internal API. Not a supported
 > plugin, not a marketplace release.
@@ -72,7 +72,9 @@ You can't add your own yet.
 Quips run on a provider you choose and pay for. Your prompt is capped at 4,000
 characters going into the plugin, and only the first 400 reach the provider —
 never your attachments, tool output, history, memory, or Hermes' reply. Nothing
-is logged or kept.
+is logged or kept. Models that reason by default use their lightest advertised
+effort when Hermes reports one; optional Claude thinking stays off. Every
+provider receives the same compact two-message request.
 
 Anything that looks like a credential is refused rather than sent, which is a
 backstop against your own typing and not a real secret scanner. If the provider
@@ -123,10 +125,6 @@ It's for that, not for reading here.
 
 Quips top out at 200 characters, one at a time, no more than one every eight
 seconds. Generation only works on Hermes v0.19.0. Popped-out pets get nothing.
-
-And a public repo doesn't make this a finished one — it installs and it works,
-but real provider failures and a full update-and-profile-switch cycle have never
-been run against live billed calls.
 
 ## Uninstall
 
