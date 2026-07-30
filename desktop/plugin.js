@@ -39,8 +39,8 @@ export const ROUTE_PATH = '/pet-chat'
 // Bounds the renderer enforces locally even if the backend says otherwise.
 const MAX_BUBBLE_CHARS = 200
 const DEFAULT_DISMISS_MS = 8000
-const DEFAULT_MAX_RESPONSE_AGE_MS = 10000
-const REQUEST_TIMEOUT_MS = 12000
+const DEFAULT_MAX_RESPONSE_AGE_MS = 40000
+const REQUEST_TIMEOUT_MS = 35000
 
 const ATTITUDES = [
   { id: 'snarky', label: 'Snarky' },
@@ -63,6 +63,9 @@ const ERROR_COPY = {
   invalid_routing: 'The selected provider/model is unavailable. Choose another Quip model.',
   generation_unavailable: 'Quips are unavailable on this Hermes version.',
   generation_failed: 'The selected provider/model failed. No fallback was used.',
+  generation_timeout: 'The selected model took too long. No fallback was used.',
+  provider_auth_failed: 'The selected provider needs authentication.',
+  model_unavailable: 'The selected model is unavailable from this provider.',
   invalid_output: 'The selected model returned unusable output.',
   sensitive_input: 'I did not send that prompt because it may contain a secret.',
   busy: 'I am still working on the previous quip.',

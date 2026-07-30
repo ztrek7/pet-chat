@@ -49,9 +49,13 @@ class AdapterUnavailable(RuntimeError):
 class AdapterFailed(RuntimeError):
     """The selected provider/model was reached and failed.
 
-    Maps to the ``generation_failed`` reason. The caller must not try a second
+    The bounded ``reason`` is safe to display. The caller must not try a second
     client, a second model, or Hermes' main model.
     """
+
+    def __init__(self, message: str, reason: str = "generation_failed") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -79,11 +83,15 @@ def _hermes_version() -> Optional[Tuple[int, int]]:
 
 
 def is_supported() -> bool:
-    """True only on the exact verified target build with the resolver present."""
+    """True only on the verified build with every required adapter helper."""
     if _hermes_version() != SUPPORTED_HERMES:
         return False
     try:
-        from agent.auxiliary_client import resolve_provider_client  # noqa: F401
+        from agent.auxiliary_client import (  # noqa: F401
+            _build_call_kwargs,
+            resolve_provider_client,
+        )
+        from agent.models_dev import PROVIDER_TO_MODELS_DEV, fetch_models_dev  # noqa: F401
     except Exception:
         return False
     return True
@@ -136,6 +144,49 @@ def _models_match(requested: str, resolved: Any) -> bool:
     return _normalize_model_id(requested) == _normalize_model_id(resolved)
 
 
+def _failure_reason(exc: Any) -> str:
+    """Map private provider failures to fixed, non-sensitive reason codes."""
+    status = getattr(exc, "status_code", None)
+    if not isinstance(status, int):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status == 401:
+        return "provider_auth_failed"
+    if status == 404:
+        return "model_unavailable"
+    if (
+        status == 408
+        or isinstance(exc, TimeoutError)
+        or "timeout" in type(exc).__name__.lower()
+    ):
+        return "generation_timeout"
+    return "generation_failed"
+
+
+def _lowest_reasoning_effort(provider: str, model: str) -> Optional[str]:
+    """Return the model's lightest advertised effort, or no override."""
+    try:
+        from agent.models_dev import PROVIDER_TO_MODELS_DEV, fetch_models_dev
+
+        provider_id = PROVIDER_TO_MODELS_DEV.get(provider.strip().lower(), provider)
+        if provider_id == "anthropic" or "claude" in model.lower():
+            return None
+        models = fetch_models_dev().get(provider_id, {}).get("models", {})
+        entry = next(
+            (value for key, value in models.items() if key.lower() == model.lower()),
+            None,
+        )
+        options = entry.get("reasoning_options", []) if isinstance(entry, dict) else []
+        values = next(
+            (item.get("values", []) for item in options if item.get("type") == "effort"),
+            [],
+        )
+    except Exception:
+        return None
+    allowed = {str(value).lower() for value in values}
+    order = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+    return next((value for value in order if value in allowed), None)
+
+
 def resolve_exact(provider: str, model: str) -> Tuple[Any, str]:
     """Resolve exactly one concrete client for exactly this pair.
 
@@ -171,6 +222,39 @@ def resolve_exact(provider: str, model: str) -> Tuple[Any, str]:
     return client, resolved_model
 
 
+def _completion_kwargs(
+    *,
+    provider: str,
+    model: str,
+    messages: list,
+    timeout: float,
+    base_url: str,
+) -> dict:
+    """Build one small request using Hermes' provider-specific wire rules."""
+    from agent.auxiliary_client import _build_call_kwargs
+
+    effort = _lowest_reasoning_effort(provider, model)
+    if effort is None:
+        reasoning_config = None
+    elif effort == "none":
+        reasoning_config = {"enabled": False}
+    else:
+        reasoning_config = {"enabled": True, "effort": effort}
+
+    kwargs = _build_call_kwargs(
+        provider,
+        model,
+        messages,
+        temperature=0.8,
+        max_tokens=MAX_COMPLETION_TOKENS,
+        timeout=timeout,
+        reasoning_config=reasoning_config,
+        base_url=base_url,
+        task="pet_chat",
+    )
+    return kwargs
+
+
 def generate(
     *,
     provider: str,
@@ -186,24 +270,27 @@ def generate(
     into it. No tools, no streaming, no history, no second attempt.
     """
     client, resolved_model = resolve_exact(provider, model)
-
+    messages = [
+        {"role": "system", "content": system_instruction},
+        {"role": "user", "content": user_text},
+    ]
     try:
-        response = client.chat.completions.create(
+        kwargs = _completion_kwargs(
+            provider=provider,
             model=resolved_model,
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": user_text},
-            ],
-            max_tokens=MAX_COMPLETION_TOKENS,
-            temperature=0.8,
-            stream=False,
+            messages=messages,
             timeout=timeout,
+            base_url=str(getattr(client, "base_url", "") or ""),
         )
+        response = client.chat.completions.create(**kwargs)
     except Exception as exc:
         # Every provider-family failure lands here — missing credentials, auth,
         # payment/capacity, model-not-found, rate limit, timeout, connection
         # error, cancellation. All of them stop. None of them escalate.
-        raise AdapterFailed("selected provider/model call failed") from exc
+        raise AdapterFailed(
+            "selected provider/model call failed",
+            reason=_failure_reason(exc),
+        ) from exc
 
     return ExactResult(
         text=_extract_text(response),

@@ -75,7 +75,7 @@ COST_WARNING_TTL_SECONDS = 300
 #: Bubble lifetime, and the window in which the renderer may still display a
 #: response at all. Both are advisory values the renderer re-checks locally.
 DISMISS_MS = 8000
-MAX_RESPONSE_AGE_MS = 10000
+MAX_RESPONSE_AGE_MS = 40000
 
 DISCLOSURE = (
     "Quips send the submitted text to the selected provider; provider costs "
@@ -89,6 +89,9 @@ USER_MESSAGES: Dict[str, str] = {
     "invalid_routing": "The selected provider/model is unavailable. Choose another Quip model.",
     "generation_unavailable": "Quips are unavailable on this Hermes version.",
     "generation_failed": "The selected provider/model failed. No fallback was used.",
+    "generation_timeout": "The selected model took too long. No fallback was used.",
+    "provider_auth_failed": "The selected provider needs authentication.",
+    "model_unavailable": "The selected model is unavailable from this provider.",
     "invalid_output": "The selected model returned unusable output.",
     "sensitive_input": "I did not send that prompt because it may contain a secret.",
     "busy": "I am still working on the previous quip.",
@@ -111,7 +114,7 @@ OWNED_PATHS: Tuple[Tuple[str, ...], ...] = (
 
 _PROVIDER_PATH, _MODEL_PATH, _FALLBACK_PATH, _TIMEOUT_PATH, _ATTITUDE_PATH = OWNED_PATHS
 
-DEFAULT_TIMEOUT_SECONDS = 8
+DEFAULT_TIMEOUT_SECONDS = 30
 
 
 class SettingsConflict(RuntimeError):
@@ -243,11 +246,8 @@ def _saved_attitude(config: Dict[str, Any]) -> str:
 
 
 def _saved_timeout(config: Dict[str, Any]) -> float:
-    """Read the owned timeout, clamped so a hand-edited config cannot hang."""
-    value = _get_path(config, _TIMEOUT_PATH)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return float(DEFAULT_TIMEOUT_SECONDS)
-    return float(min(max(value, 1), 30))
+    """Use one fixed request budget so saved pre-fix values cannot shorten it."""
+    return float(DEFAULT_TIMEOUT_SECONDS)
 
 
 def pair_is_concrete(provider: str, model: str) -> bool:
@@ -295,6 +295,17 @@ def _excluded_providers() -> frozenset:
         return frozenset()
 
 
+def _model_outputs_text(provider: str, model: str) -> bool:
+    """Keep unknown models, but hide models known to produce no text."""
+    try:
+        from agent.models_dev import get_model_info
+
+        info = get_model_info(provider, model)
+    except Exception:
+        return True
+    return info is None or not info.output_modalities or "text" in info.output_modalities
+
+
 def normalize_catalog(providers: Optional[Iterable[Any]]) -> List[Dict[str, Any]]:
     """Reduce Hermes provider rows to the safe subset the picker needs."""
     rows: List[Dict[str, Any]] = []
@@ -318,6 +329,8 @@ def normalize_catalog(providers: Optional[Iterable[Any]]) -> List[Dict[str, Any]
                 continue
             model = model.strip()
             if not model or model.lower() in VIRTUAL_ROUTING or model in seen:
+                continue
+            if not _model_outputs_text(slug, model):
                 continue
             seen.add(model)
             models.append({"id": model, "label": model})

@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,6 +59,179 @@ class ModelMatchTests(unittest.TestCase):
         self.assertFalse(self.ec._models_match("gpt-4o", 12))
         self.assertFalse(self.ec._models_match("gpt-4o", ""))
 
+    def test_provider_failures_are_safely_classified(self):
+        self.assertEqual(self.ec._failure_reason(TimeoutError("private")), "generation_timeout")
+        self.assertEqual(
+            self.ec._failure_reason(SimpleNamespace(status_code=401)), "provider_auth_failed"
+        )
+        self.assertEqual(
+            self.ec._failure_reason(SimpleNamespace(status_code=403)), "generation_failed"
+        )
+        self.assertEqual(
+            self.ec._failure_reason(SimpleNamespace(status_code=404)), "model_unavailable"
+        )
+        self.assertEqual(
+            self.ec._failure_reason(SimpleNamespace(status_code=500)), "generation_failed"
+        )
+
+    def test_builds_lightweight_provider_aware_request(self):
+        calls = {}
+        agent = ModuleType("agent")
+        agent.__path__ = []
+        auxiliary = ModuleType("agent.auxiliary_client")
+        models_dev = ModuleType("agent.models_dev")
+
+        def build(provider, model, messages, **kwargs):
+            calls.update(provider=provider, model=model, messages=messages, **kwargs)
+            return {"model": model, "messages": messages, "timeout": kwargs["timeout"]}
+
+        setattr(auxiliary, "_build_call_kwargs", build)
+        setattr(
+            auxiliary,
+            "auxiliary_max_tokens_param",
+            lambda value, model=None: {"max_completion_tokens": value},
+        )
+        setattr(
+            models_dev,
+            "PROVIDER_TO_MODELS_DEV",
+            {"example": "vendor", "anthropic": "anthropic"},
+        )
+        setattr(
+            models_dev,
+            "fetch_models_dev",
+            lambda: {
+                "vendor": {
+                    "models": {
+                        "reasoner": {
+                            "reasoning_options": [
+                                {"type": "effort", "values": ["low", "medium", "high"]}
+                            ]
+                        },
+                        "pro": {
+                            "reasoning_options": [
+                                {"type": "effort", "values": ["medium", "high"]}
+                            ]
+                        },
+                        "none-model": {
+                            "reasoning_options": [
+                                {"type": "effort", "values": ["none", "low"]}
+                            ]
+                        },
+                        "fast-model": {},
+                    }
+                },
+                "anthropic": {
+                    "models": {
+                        "claude-opus": {
+                            "reasoning_options": [
+                                {"type": "effort", "values": ["low", "medium", "high"]}
+                            ]
+                        }
+                    }
+                },
+            },
+        )
+        modules = {
+            "agent": agent,
+            "agent.auxiliary_client": auxiliary,
+            "agent.models_dev": models_dev,
+        }
+        messages = [{"role": "user", "content": "hi"}]
+
+        with patch.dict(sys.modules, modules):
+            kwargs = self.ec._completion_kwargs(
+                provider="example",
+                model="reasoner",
+                messages=messages,
+                timeout=30,
+                base_url="https://example.test/v1",
+            )
+        self.assertEqual(calls["reasoning_config"], {"enabled": True, "effort": "low"})
+        self.assertEqual(calls["temperature"], 0.8)
+        self.assertEqual(calls["max_tokens"], self.ec.MAX_COMPLETION_TOKENS)
+        self.assertNotIn("max_tokens", kwargs)
+        self.assertNotIn("max_completion_tokens", kwargs)
+        self.assertEqual(kwargs["messages"], messages)
+
+        calls.clear()
+        with patch.dict(sys.modules, modules):
+            self.ec._completion_kwargs(
+                provider="example",
+                model="pro",
+                messages=messages,
+                timeout=30,
+                base_url="https://example.test/v1",
+            )
+        self.assertEqual(calls["reasoning_config"], {"enabled": True, "effort": "medium"})
+
+        calls.clear()
+        with patch.dict(sys.modules, modules):
+            self.ec._completion_kwargs(
+                provider="example",
+                model="none-model",
+                messages=messages,
+                timeout=30,
+                base_url="https://example.test/v1",
+            )
+        self.assertEqual(calls["reasoning_config"], {"enabled": False})
+
+        calls.clear()
+        with patch.dict(sys.modules, modules):
+            self.ec._completion_kwargs(
+                provider="example",
+                model="fast-model",
+                messages=messages,
+                timeout=30,
+                base_url="https://example.test/v1",
+            )
+        self.assertIsNone(calls["reasoning_config"])
+
+        calls.clear()
+        with patch.dict(sys.modules, modules):
+            self.ec._completion_kwargs(
+                provider="example",
+                model="brand-new-model",
+                messages=messages,
+                timeout=30,
+                base_url="https://example.test/v1",
+            )
+        self.assertIsNone(calls["reasoning_config"])
+
+        calls.clear()
+        with patch.dict(sys.modules, modules):
+            self.ec._completion_kwargs(
+                provider="anthropic",
+                model="claude-opus",
+                messages=messages,
+                timeout=30,
+                base_url="https://api.anthropic.com",
+            )
+        self.assertIsNone(calls["reasoning_config"])
+
+    def test_request_builder_failures_are_sanitized(self):
+        with (
+            patch.object(
+                self.ec,
+                "resolve_exact",
+                return_value=(SimpleNamespace(base_url="https://private.invalid"), "grok-4.5"),
+            ),
+            patch.object(
+                self.ec,
+                "_completion_kwargs",
+                side_effect=RuntimeError("private provider detail"),
+            ),
+        ):
+            with self.assertRaises(self.ec.AdapterFailed) as caught:
+                self.ec.generate(
+                    provider="xai-oauth",
+                    model="grok-4.5",
+                    system_instruction="one line",
+                    user_text="hello",
+                    timeout=30,
+                )
+        self.assertEqual(caught.exception.reason, "generation_failed")
+        self.assertNotIn("private provider detail", str(caught.exception))
+
 
 class QuipGateTests(unittest.TestCase):
     @classmethod
@@ -74,6 +249,44 @@ class QuipGateTests(unittest.TestCase):
         self.assertIsNone(self.quip.normalize_output("ok\x00bad"))
         long = "a" * 500
         self.assertEqual(len(self.quip.normalize_output(long)), self.quip.MAX_QUIP_CHARS)
+
+    def test_attitude_prompts_stay_lightweight(self):
+        for attitude in self.quip.ATTITUDES:
+            instruction = self.quip.system_instruction(attitude)
+            with self.subTest(attitude=attitude):
+                self.assertLessEqual(len(instruction), 320)
+                self.assertIn("never the person", instruction.lower())
+                self.assertIn("distressed", instruction.lower())
+
+
+class TimeoutBudgetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.api = _load("pet_chat_plugin_api_test", "dashboard/plugin_api.py")
+        cls.desktop = (ROOT / "desktop/plugin.js").read_text(encoding="utf-8")
+
+    def test_reasoning_models_get_one_aligned_request_budget(self):
+        self.assertEqual(self.api.DEFAULT_TIMEOUT_SECONDS, 30)
+        self.assertEqual(self.api.MAX_RESPONSE_AGE_MS, 40000)
+        self.assertIn("const REQUEST_TIMEOUT_MS = 35000", self.desktop)
+        self.assertIn("const DEFAULT_MAX_RESPONSE_AGE_MS = 40000", self.desktop)
+
+
+class CatalogTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.api = _load("pet_chat_plugin_api_catalog_test", "dashboard/plugin_api.py")
+
+    def test_picker_excludes_known_non_text_models(self):
+        providers = [{"slug": "xai-oauth", "models": ["grok-4.5", "grok-image"]}]
+        with patch.object(
+            self.api,
+            "_model_outputs_text",
+            side_effect=lambda provider, model: model == "grok-4.5",
+            create=True,
+        ):
+            catalog = self.api.normalize_catalog(providers)
+        self.assertEqual(catalog[0]["models"], [{"id": "grok-4.5", "label": "grok-4.5"}])
 
 
 class DesktopInstallTests(unittest.TestCase):
