@@ -7,7 +7,7 @@ can replace wholesale.
 
 Banned here and in :mod:`quip`, permanently:
 
-* ``call_llm`` — on Hermes v0.19.0 it can reach a main-model fallback even with
+* ``call_llm`` — on Hermes v0.20.0 it can reach a main-model fallback even with
   an empty ``fallback_chain``;
 * ``ctx.llm`` — same reachability, plus renderer-selected routing;
 * the configured-fallback-chain resolver and any main-agent model client.
@@ -24,7 +24,7 @@ from typing import Any, Optional, Tuple
 
 #: The single Hermes (major, minor) this adapter has been proven against.
 #: Widening this is a preflight exercise (Gate E), not an edit.
-SUPPORTED_HERMES: Tuple[int, int] = (0, 19)
+SUPPORTED_HERMES: Tuple[int, int] = (0, 20)
 
 #: Routing values that name a router rather than a concrete provider. Rejected
 #: *before* resolution so a virtual name can never reach Hermes' auto chain.
@@ -68,11 +68,12 @@ class ExactResult:
 
 
 def _hermes_version() -> Optional[Tuple[int, int]]:
+    # hermes_cli.version was removed in 0.20; __version__ lives on hermes_cli.
     try:
-        from hermes_cli.version import __version__ as raw  # type: ignore
+        from hermes_cli import __version__ as raw  # type: ignore
     except Exception:
         try:
-            from hermes_cli import __version__ as raw  # type: ignore
+            from hermes_cli.version import __version__ as raw  # type: ignore
         except Exception:
             return None
     parts = str(raw).split(".")

@@ -5,7 +5,7 @@ must be installed and enabled before quips can appear.
 
 ## Requirements
 
-- Hermes Agent v0.19.0
+- Hermes Agent v0.20.0
 - A provider configured and authenticated in Hermes
 - Git available to Hermes
 - A pet enabled and selected under **Settings → Appearance → Pet**
@@ -97,7 +97,7 @@ own plugin settings.
 
 - **Backend unreachable:** fully quit and reopen Hermes Desktop after
   installation or update.
-- **Quips unavailable:** confirm that Hermes is v0.19.0.
+- **Quips unavailable:** confirm that Hermes is v0.20.0.
 - **No bubble:** confirm that a provider/model pair is saved and the pet is
   visible in the Hermes window.
 - **Provider failed:** Pet Chat does not retry with another provider or model.
