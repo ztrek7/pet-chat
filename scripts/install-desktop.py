@@ -158,7 +158,7 @@ def _receipt(target: Path, receipt_path: Path, source_commit: str, hashes: Dict[
         "receipt_version": RECEIPT_VERSION,
         "plugin_id": "pet-chat",
         "plugin_version": PLUGIN_VERSION,
-        "compatibility": ">=0.19.0,<0.20.0",
+        "compatibility": ">=0.20.0,<0.21.0",
         "source_url": "https://github.com/ztrek7/pet-chat",
         "resolved_commit": source_commit,
         "desktop": {"source_commit": source_commit},

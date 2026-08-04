@@ -21,4 +21,4 @@ Fully quit and reopen Hermes Desktop. Then open **Settings → Plugins**, turn o
 Select a provider/model pair and an attitude, then save. Pet Chat does not
 select a model or send anything until you save.
 
-Requires Hermes Agent v0.19.0.
+Requires Hermes Agent v0.20.0.

@@ -10,7 +10,7 @@ has opinions about both.
 It doesn't touch your actual message. The quip shows up on its own a few seconds
 later, or not at all.
 
-> Built against Hermes Agent **v0.19.0** using an internal API. Not a supported
+> Built against Hermes Agent **v0.20.0** using an internal API. Not a supported
 > plugin, not a marketplace release.
 
 ## You need a pet first
@@ -124,7 +124,7 @@ It's for that, not for reading here.
 ## Known limits
 
 Quips top out at 200 characters, one at a time, no more than one every eight
-seconds. Generation only works on Hermes v0.19.0. Popped-out pets get nothing.
+seconds. Generation only works on Hermes v0.20.0. Popped-out pets get nothing.
 
 ## Uninstall
 

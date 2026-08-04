@@ -1,6 +1,6 @@
 name: pet-chat
 version: 0.1.0-dev
 kind: standalone
-compatibility: ">=0.19.0,<0.20.0"
+compatibility: ">=0.20.0,<0.21.0"
 description: Lets your Hermes Desktop pet read your prompts and talk back.
 entrypoint: __init__.py
