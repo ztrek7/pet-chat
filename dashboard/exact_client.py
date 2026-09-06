@@ -22,13 +22,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
-#: The single Hermes (major, minor) this adapter has been proven against.
+#: Hermes (major, minor) versions checked against this adapter.
 #: Widening this is a preflight exercise (Gate E), not an edit.
-SUPPORTED_HERMES: Tuple[int, int] = (0, 20)
+SUPPORTED_HERMES = frozenset({(0, 20), (0, 21)})
 
 #: Routing values that name a router rather than a concrete provider. Rejected
 #: *before* resolution so a virtual name can never reach Hermes' auto chain.
-VIRTUAL_ROUTING = frozenset({"", "auto", "main", "moa", "default", "none"})
+# Bare "custom" can fall through to an unrelated API-key provider. Named
+# custom providers remain available; they resolve to a specific endpoint.
+VIRTUAL_ROUTING = frozenset({"", "auto", "main", "moa", "default", "none", "custom"})
 
 #: Provider families excluded from the catalog because they failed the Gate E
 #: failure matrix on the target build. Populated by live preflight (Slice 6);
@@ -85,7 +87,7 @@ def _hermes_version() -> Optional[Tuple[int, int]]:
 
 def is_supported() -> bool:
     """True only on the verified build with every required adapter helper."""
-    if _hermes_version() != SUPPORTED_HERMES:
+    if _hermes_version() not in SUPPORTED_HERMES:
         return False
     try:
         from agent.auxiliary_client import (  # noqa: F401
@@ -142,6 +144,8 @@ def _models_match(requested: str, resolved: Any) -> bool:
     """Confirm the resolver handed back the model we asked for."""
     if not isinstance(resolved, str) or not resolved.strip():
         return False
+    if "/" in requested and "/" in resolved:
+        return requested.strip().lower() == resolved.strip().lower()
     return _normalize_model_id(requested) == _normalize_model_id(resolved)
 
 

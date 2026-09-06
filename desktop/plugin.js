@@ -30,7 +30,7 @@ import {
   host,
   useValue
 } from '@hermes/plugin-sdk'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 
 export const PLUGIN_ID = 'pet-chat'
@@ -82,7 +82,7 @@ const GENERIC_ERROR = 'Pet Chat hit an unexpected problem.'
 const NOTIFIED_KEY = 'configureNotified'
 
 export function errorCopy(code) {
-  return ERROR_COPY[code] || GENERIC_ERROR
+  return Object.prototype.hasOwnProperty.call(ERROR_COPY, code) ? ERROR_COPY[code] : GENERIC_ERROR
 }
 
 // `ctx` is only handed to register(); the page components need its scoped REST
@@ -95,8 +95,22 @@ function rest(path, options) {
 }
 
 /** Normalize any thrown value into a safe error code. Never surfaces the error. */
+export function errorPayload(error) {
+  if (!error || typeof error !== 'object') return {}
+  if (error.error || error.code) return error
+  // Electron serializes HTTP failures as Error("409: {JSON}"), sometimes
+  // with an IPC prefix. Decode the envelope, never display the raw message.
+  const match = typeof error.message === 'string' && error.message.match(/\b[45]\d\d: (\{.*\})$/s)
+  try {
+    return match ? JSON.parse(match[1]) : {}
+  } catch {
+    return {}
+  }
+}
+
 export function toErrorCode(error) {
-  const code = error && typeof error === 'object' ? error.code || error.error : null
+  const payload = errorPayload(error)
+  const code = payload.code || payload.error
   if (typeof code === 'string' && Object.prototype.hasOwnProperty.call(ERROR_COPY, code)) {
     return code
   }
@@ -105,16 +119,33 @@ export function toErrorCode(error) {
 
 function useSettings() {
   const [state, setState] = useState({ status: 'loading', data: null, error: null })
+  const sequence = useRef(0)
 
   const load = useCallback((refresh) => {
+    const id = ++sequence.current
+    const scope = readProfile()
     setState((prev) => ({ ...prev, status: prev.data ? 'refreshing' : 'loading' }))
     return rest(refresh ? '/settings?refresh=true' : '/settings')
-      .then((data) => setState({ status: 'ready', data, error: null }))
-      .catch((error) => setState({ status: 'error', data: null, error: toErrorCode(error) }))
+      .then((data) => {
+        if (id === sequence.current && scope === readProfile()) setState({ status: 'ready', data, error: null })
+      })
+      .catch((error) => {
+        if (id === sequence.current && scope === readProfile()) setState({ status: 'error', data: null, error: toErrorCode(error) })
+      })
   }, [])
 
   useEffect(() => {
     void load(false)
+    const changed = () => {
+      setState({ status: 'loading', data: null, error: null })
+      void load(false)
+    }
+    const unsubscribers = [host.state.profile, host.state.connectionId]
+      .filter(Boolean).map(state => state.listen(changed))
+    return () => {
+      sequence.current++
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+    }
   }, [load])
 
   return [state, load, setState]
@@ -172,6 +203,7 @@ function ModelPicker({ catalog, selected, onSelect, disabled }) {
                   {
                     type: 'button',
                     disabled,
+                    'aria-pressed': Boolean(active),
                     onClick: () => onSelect({ provider: group.provider, model: model.id }),
                     className: [
                       'flex items-center justify-between gap-2 rounded-[3px] px-2 py-1 text-left text-xs',
@@ -218,6 +250,7 @@ function PetChatPage() {
   const save = useCallback(
     (confirmation) => {
       if (!selected || !data) return
+      const scope = readProfile()
       setSaving(true)
       setNotice(null)
       rest('/settings', {
@@ -231,6 +264,7 @@ function PetChatPage() {
         }
       })
         .then((next) => {
+          if (scope !== readProfile() || disposed) return
           setPendingWarning(null)
           setState({ status: 'ready', data: next, error: null })
           setNotice({ tone: 'ok', message: 'Saved.' })
@@ -239,7 +273,8 @@ function PetChatPage() {
           void refreshReadiness()
         })
         .catch((error) => {
-          const payload = error && typeof error === 'object' ? error : {}
+          if (scope !== readProfile() || disposed) return
+          const payload = errorPayload(error)
           if (payload.error === 'confirmation_required' && payload.cost_warning) {
             setPendingWarning(payload.cost_warning)
             setNotice(null)
@@ -418,6 +453,7 @@ function PetChatPage() {
 
 let readinessState = 'unknown'
 let disposed = true
+let readinessSeq = 0
 
 export function getReadiness() {
   return readinessState
@@ -425,12 +461,17 @@ export function getReadiness() {
 
 function refreshReadiness() {
   if (disposed) return Promise.resolve('unknown')
+  const seq = ++readinessSeq
+  const scope = readProfile()
   return rest('/status')
     .then((status) => {
+      if (disposed || seq !== readinessSeq || scope !== readProfile()) return 'unknown'
       readinessState = status && typeof status.state === 'string' ? status.state : 'unknown'
+      maybeNotifyConfigure(pluginCtx, status)
       return readinessState
     })
     .catch(() => {
+      if (disposed || seq !== readinessSeq || scope !== readProfile()) return 'unknown'
       readinessState = 'unknown'
       return readinessState
     })
@@ -542,6 +583,13 @@ export function beginQuip(draftText) {
 
   // A newer submission always wins; nothing is ever queued.
   invalidate()
+  // ponytail: ambient REST cannot target another tile's owner. Skip those
+  // sends until the SDK offers explicitly scoped plugin REST.
+  const owner = host.state.focusedSessionOwner?.get()
+  if (host.state.focusedSessionOwner && !owner) return null
+  if (owner && owner.connectionId !== (host.state.connectionId?.get() || 'local')) return null
+  if ((owner?.profile || host.state.focusedSessionProfile?.get() || host.state.profile.get()) !== host.state.profile.get()) return null
+  if (text.length > 4000 || findPetRect() === null) return null
 
   const readiness = readinessState
   if (readiness !== 'ready') {
@@ -576,7 +624,7 @@ export function beginQuip(draftText) {
 
 function readProfile() {
   try {
-    return host.state.profile.get()
+    return JSON.stringify([host.state.connectionId?.get() || 'local', host.state.profile.get()])
   } catch {
     return null
   }
@@ -729,7 +777,7 @@ export default {
     disposed = false
     readinessState = 'unknown'
 
-    const dispose = ctx.registerMany([
+    ctx.registerMany([
       {
         id: 'page',
         area: ROUTES_AREA,
@@ -787,27 +835,25 @@ export default {
 
     // Readiness on activation, so the first submission can decide correctly
     // and the one-time Configure notification can fire. No prompt text.
-    void refreshReadiness().then(() =>
-      ctx
-        .rest('/status')
-        .then((status) => maybeNotifyConfigure(ctx, status))
-        .catch(() => {})
-    )
+    void refreshReadiness()
 
     // A profile switch invalidates unconditionally: pending work is dropped
     // and the bubble is cleared before the new profile's readiness is known.
-    const unsubscribeProfile = host.state.profile.subscribe(() => {
+    const changed = () => {
       invalidate()
       readinessState = 'unknown'
       void refreshReadiness()
-    })
-
-    return () => {
-      disposed = true
-      invalidate()
-      unsubscribeProfile()
-      dispose()
-      pluginCtx = null
     }
+    const unsubscribers = [host.state.profile, host.state.connectionId]
+      .filter(Boolean).map(state => state.listen(changed))
+
+    ctx.onDispose(() => {
+      disposed = true
+      readinessSeq++
+      readinessState = 'unknown'
+      invalidate()
+      unsubscribers.forEach(unsubscribe => unsubscribe())
+      pluginCtx = null
+    })
   }
 }

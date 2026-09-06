@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal runnable checks — stdlib only, no Hermes install required.
+"""Minimal runnable checks — PyYAML required, no Hermes install required.
 
     python3 tests/test_smoke.py
 """

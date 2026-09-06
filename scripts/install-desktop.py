@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 RECEIPT_VERSION = 1
 PLUGIN_VERSION = "0.1.0-dev"
@@ -158,7 +158,7 @@ def _receipt(target: Path, receipt_path: Path, source_commit: str, hashes: Dict[
         "receipt_version": RECEIPT_VERSION,
         "plugin_id": "pet-chat",
         "plugin_version": PLUGIN_VERSION,
-        "compatibility": ">=0.20.0,<0.21.0",
+        "compatibility": ">=0.20.0,<0.22.0",
         "source_url": "https://github.com/ztrek7/pet-chat",
         "resolved_commit": source_commit,
         "desktop": {"source_commit": source_commit},
@@ -185,6 +185,8 @@ def install_desktop(source_dir: Path, target: Path, receipt_path: Path, resolved
     backup_dir = Path(tempfile.mkdtemp(prefix="pet-chat-backup-", dir=str(target.parent)))
     backup_target = backup_dir / "artifact"
     backup_exists = False
+    installed = False
+    committed = False
     stage = Path(tempfile.mkdtemp(prefix="pet-chat-stage-", dir=str(target.parent)))
     try:
         staged = stage / "artifact"
@@ -196,18 +198,24 @@ def install_desktop(source_dir: Path, target: Path, receipt_path: Path, resolved
             os.replace(target, backup_target)
             backup_exists = True
         os.replace(staged, target)
-        receipt = _receipt(target, receipt_path, resolved_commit, _file_hashes(target), classification)
+        installed = True
+        receipt = _receipt(target, receipt_path, resolved_commit, hashes, classification)
         _write_json_atomic(receipt_path, receipt)
+        committed = True
         return receipt
     except Exception as exc:
-        if target.exists():
+        if installed:
             shutil.rmtree(target)
         if backup_exists:
-            os.replace(backup_target, target)
+            try:
+                os.replace(backup_target, target)
+            except OSError as restore_error:
+                raise LifecycleError(f"restore failed; prior artifact retained at {backup_target}") from restore_error
         raise LifecycleError("Desktop installation failed; prior verified state restored") from exc
     finally:
         shutil.rmtree(stage, ignore_errors=True)
-        shutil.rmtree(backup_dir, ignore_errors=True)
+        if committed or not backup_target.exists():
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def uninstall_desktop(target: Path, receipt_path: Path) -> Dict[str, str]:

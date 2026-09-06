@@ -26,7 +26,7 @@ AUX_TASK_DEFAULTS: Dict[str, Any] = {
     "provider": "",
     "model": "",
     "fallback_chain": [],
-    "timeout": 8,
+    "timeout": 30,
 }
 
 

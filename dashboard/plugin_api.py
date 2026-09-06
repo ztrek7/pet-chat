@@ -28,6 +28,7 @@ work.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -66,7 +67,7 @@ DEFAULT_ATTITUDE = "snarky"
 
 #: Routing values that name a router rather than a concrete provider. None of
 #: these may ever be saved or resolved (spec v6 §3.5).
-VIRTUAL_ROUTING = frozenset({"", "auto", "main", "moa", "default", "none"})
+VIRTUAL_ROUTING = frozenset({"", "auto", "main", "moa", "default", "none", "custom"})
 
 MAX_REQUEST_ID_CHARS = 80
 MAX_PROMPT_CHARS = 4000
@@ -143,16 +144,18 @@ def _read_config() -> Dict[str, Any]:
     path = config_path()
     try:
         text = path.read_text(encoding="utf-8")
-    except (FileNotFoundError, NotADirectoryError):
-        return {}
-    except OSError:
+    except FileNotFoundError:
         return {}
     try:
         loaded = yaml.safe_load(text)
     except yaml.YAMLError:
         # A config we cannot parse is one we must not rewrite.
         raise RuntimeError("active profile config.yaml is not valid YAML")
-    return loaded if isinstance(loaded, dict) else {}
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise RuntimeError("active profile config.yaml must be a mapping")
+    return loaded
 
 
 def _write_config(data: Dict[str, Any]) -> None:
@@ -182,10 +185,8 @@ def _settings_lock():
 
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         except (ImportError, OSError):
-            # No advisory locking available: the in-process lock below still
-            # serializes this process, and the revision CAS still refuses a
-            # write that raced with another writer.
-            pass
+            # Refuse writes if cross-process exclusion cannot be established.
+            raise RuntimeError("settings lock unavailable")
         with _PROCESS_LOCK:
             yield
     finally:
@@ -208,9 +209,11 @@ def _set_path(data: Dict[str, Any], path: Sequence[str], value: Any) -> None:
     node = data
     for key in path[:-1]:
         child = node.get(key)
-        if not isinstance(child, dict):
+        if child is None:
             child = {}
             node[key] = child
+        if not isinstance(child, dict):
+            raise RuntimeError("settings parent must be a mapping")
         node = child
     node[path[-1]] = value
 
@@ -367,23 +370,26 @@ def _load_sibling(name: str):
     import importlib.util
     import sys
 
-    cached = sys.modules.get(f"pet_chat_{name}")
-    if cached is not None:
-        return cached
-    path = Path(__file__).resolve().parent / f"{name}.py"
-    if not path.is_file():
-        raise ImportError(name)
-    spec = importlib.util.spec_from_file_location(f"pet_chat_{name}", path)
-    if spec is None or spec.loader is None:
-        raise ImportError(name)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[f"pet_chat_{name}"] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(f"pet_chat_{name}", None)
-        raise
-    return module
+    # HTTP handlers run in worker threads. Do not expose a half-loaded module
+    # (especially quip's limiter) to another request during its first import.
+    with _PROCESS_LOCK:
+        cached = sys.modules.get(f"pet_chat_{name}")
+        if cached is not None:
+            return cached
+        path = Path(__file__).resolve().parent / f"{name}.py"
+        if not path.is_file():
+            raise ImportError(name)
+        spec = importlib.util.spec_from_file_location(f"pet_chat_{name}", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(name)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[f"pet_chat_{name}"] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(f"pet_chat_{name}", None)
+            raise
+        return module
 
 
 def generation_available() -> bool:
@@ -633,7 +639,7 @@ def put_settings(body: Any) -> Tuple[int, Dict[str, Any]]:
             _write_config(config)
     except SettingsConflict:
         return _error("settings_conflict", status=409)
-    except RuntimeError:
+    except (RuntimeError, OSError):
         return _error("settings_unwritable", status=500)
 
     # Re-read from disk so the response reflects what was actually persisted.
@@ -725,17 +731,17 @@ if APIRouter is not None:  # pragma: no cover - requires the dashboard runtime
             return None
 
     @router.get("/status")
-    async def get_status():
+    def get_status():
         return _respond(status_payload())
 
     @router.get("/settings")
-    async def get_settings(refresh: bool = False):
+    def get_settings(refresh: bool = False):
         return _respond(get_settings_payload(refresh=refresh))
 
     @router.put("/settings")
     async def put_settings_route(request: "Request"):
-        return _respond(put_settings(await _json_body(request)))
+        return _respond(await asyncio.to_thread(put_settings, await _json_body(request)))
 
     @router.post("/quip")
     async def post_quip_route(request: "Request"):
-        return _respond(post_quip(await _json_body(request)))
+        return _respond(await asyncio.to_thread(post_quip, await _json_body(request)))
