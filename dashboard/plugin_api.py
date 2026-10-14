@@ -16,10 +16,9 @@ Contract (spec v6 §5–§7):
   is refused instead of clobbering;
 * ``POST /quip`` fails closed on every gate it cannot satisfy.
 
-Profile scoping is inherited, not reimplemented: Hermes points ``HERMES_HOME``
-at the active profile directory, so ``$HERMES_HOME/config.yaml`` *is* the
-active profile's config. Two profiles cannot see each other's pair because
-they are two different files.
+Profile scoping is inherited through Hermes' ``get_hermes_home()``. Current
+hosts use a request-local override; older hosts use ``HERMES_HOME``. Worker
+threads preserve that context, so each profile reads its own config file.
 
 The generation adapter itself is Slice 3. Until ``exact_client.py`` exists
 beside this file, the capability probe reports ``generation_available: false``
@@ -40,7 +39,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import yaml
+try:
+    import hermes_yaml as yaml
+except ModuleNotFoundError as exc:
+    if exc.name != "hermes_yaml":
+        raise
+    import yaml  # Older Hermes supplies PyYAML instead.
 
 try:  # pragma: no cover - exercised only inside a full Hermes dashboard
     from fastapi import APIRouter, Request
@@ -280,7 +284,10 @@ def _catalog_rows(refresh: bool = False) -> Optional[List[Dict[str, Any]]]:
     except Exception:
         return None
     try:
+        config = _read_config()
         providers = list_authenticated_providers(
+            user_providers=config.get("providers"),
+            custom_providers=config.get("custom_providers"),
             for_picker=True,
             refresh=refresh,
             probe_custom_providers=False,

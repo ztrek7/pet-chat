@@ -1,4 +1,53 @@
-# Pet Chat audit — 2026-09-05
+# Pet Chat audit — 2026-10-13
+
+Checked the latest published release, Hermes **v0.21.7**, at source commit
+`71d34bad1045610252eda02ee79549436896e784`. No local Hermes installation was
+used. Compatibility failures were reproduced before the fixes; the existing
+tests alone had passed.
+
+| Finding | Correction |
+| --- | --- |
+| The old `hermes_cli.__version__` reports `0.0.0` on an unstamped 0.21.7 source checkout, disabling generation. | Read `get_version_info().base_version`; retain the old lookup only for hosts without the new API. Unknown identities still fail closed. |
+| The backend imports PyYAML, which current Hermes no longer supplies as its YAML dependency. | Use `hermes_yaml`, with PyYAML as the older-host fallback. |
+| The catalog omitted profile provider definitions, hiding named custom models and ignoring provider enablement overrides. | Pass both `providers` and `custom_providers` into the host picker. Verified through a real settings save and generation request. |
+| Current Hermes ignores the manifest's old `compatibility` field. | Add the host-supported `requires_hermes` constraint and verify that it rejects 0.22.0. |
+| Canvas-based pet detection excludes popped-out pets and depends on private DOM structure. | Prefer the supported `ctx.pet.say/clear/visible` API; keep the in-window fallback for older hosts. |
+| Changing the focused owner without changing the backend socket can show an old profile's pending quip. | Clear and invalidate on an owner identity change. Equal owner objects do not discard pending replies. |
+
+Validation uses an isolated Python environment with OpenAI SDK 2.24.0,
+FastAPI 0.133.1, Starlette 1.3.1, and ruamel.yaml 0.18.16, matching the relevant
+Hermes pins. No runtime dependencies were added to Pet Chat.
+
+- Python regression suite: **28 passed**, no skips.
+- Desktop logic suite: **8 passed**, covering native bubbles, hidden pets,
+  owner changes, late replies, cleanup, and the older-host path.
+- `python tests/check_hermes.py /path/to/hermes-agent`: **4 passed** against
+  v0.21.7. Uses real host helpers and the OpenAI SDK, temporary configs, and an
+  in-memory HTTP transport. Real socket connections and non-git subprocesses
+  are blocked. Checks settings → exact-model generation, request-local profile
+  context, version gates, and one-request/no-fallback behavior for HTTP
+  401/404/429/500 failures.
+- JavaScript syntax, isolated Ruff correctness checks, and `git diff --check`
+  passed.
+
+This establishes source/API compatibility and offline behavior, **not** live
+provider success or visual Desktop operation. No plugin was installed,
+enabled, published, or tested against a paid model in this audit. Older Hermes
+support is retained but was not re-tested against its real source. The native
+bubble caps visible text at 120 characters; the legacy bubble and backend cap
+at 200. The private generation adapter and provider-dependent token limits
+remain as described below.
+
+Sources: [release](https://github.com/NousResearch/hermes-agent/releases/tag/v0.21.7),
+[version API](https://github.com/NousResearch/hermes-agent/blob/71d34bad1045610252eda02ee79549436896e784/hermes_cli/version_info.py),
+[YAML module](https://github.com/NousResearch/hermes-agent/blob/71d34bad1045610252eda02ee79549436896e784/hermes_yaml.py),
+[catalog](https://github.com/NousResearch/hermes-agent/blob/71d34bad1045610252eda02ee79549436896e784/hermes_cli/model_switch_providers.py),
+[pet API](https://github.com/NousResearch/hermes-agent/blob/71d34bad1045610252eda02ee79549436896e784/apps/desktop/src/contrib/plugin.ts).
+
+# Previous audit — 2026-09-05
+
+The following records the earlier environment and verification; it is retained
+as history and does not describe the current machine or all current behavior.
 
 ## Assessment
 

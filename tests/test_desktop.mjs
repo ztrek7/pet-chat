@@ -18,10 +18,12 @@ function atom(initial) {
     get listeners() { return listeners.size }
   }
 }
-async function load() {
+async function load({ nativePet = false } = {}) {
   const profile = atom('default'), connectionId = atom('local')
   const focusedSessionProfile = atom('default')
   const host = { state: { profile, connectionId, focusedSessionProfile }, notify() {}, navigate() {} }
+  const focusedSessionOwner = nativePet ? atom({ connectionId: 'local', profile: 'default' }) : null
+  if (focusedSessionOwner) host.state.focusedSessionOwner = focusedSessionOwner
   const rect = { left: 200, top: 300, bottom: 360, width: 60, height: 60 }
   const pet = { parentElement: null, getBoundingClientRect: () => rect }
   const window = { getComputedStyle: () => ({ position: 'fixed', zIndex: '60', opacity: '1' }) }
@@ -54,11 +56,103 @@ async function load() {
       return new Promise((resolve, reject) => requests.push({ path, options, resolve, reject }))
     }
   }
+  const spoken = [], cleared = []
+  if (nativePet) {
+    ctx.pet = {
+      visible: atom(true),
+      say(text, options) { spoken.push({ text, options }); return () => {} },
+      clear(id) { cleared.push(id) }
+    }
+    document.querySelectorAll = () => [] // A popped-out pet has no local canvas.
+  }
   module.namespace.default.register(ctx) // Hermes ignores register's return value.
   const stop = () => disposers.forEach(fn => fn())
   return { api: module.namespace, ctx, requests, profile, connectionId, focusedSessionProfile,
-    document, stop, contributions }
+    document, stop, contributions, spoken, cleared, focusedSessionOwner }
 }
+
+test('native pet API supports popped-out pets and clears lines on scope changes', async () => {
+  const app = await load({ nativePet: true })
+  try {
+    app.requests.at(-1).resolve({ state: 'ready' })
+    await tick()
+    const id = app.api.beginQuip('hello from the overlay')
+    assert.ok(id)
+    assert.equal(app.requests.at(-1).path, '/quip')
+    app.requests.at(-1).resolve({ request_id: id, quip: 'Hello back.', dismiss_ms: 8000 })
+    await tick()
+    assert.equal(app.spoken.length, 1)
+    assert.equal(app.spoken[0].text, 'Hello back.')
+    assert.equal(app.spoken[0].options.ttlMs, 8000)
+    assert.equal(app.spoken[0].options.tone, 'info')
+    const clears = app.cleared.length
+    app.profile.set('other')
+    assert.ok(app.cleared.length > clears)
+    assert.ok(!app.contributions.some(row => row.id === 'bubble'))
+  } finally { app.stop() }
+})
+
+test('hidden native pet suppresses requests and pending responses', async () => {
+  const app = await load({ nativePet: true })
+  try {
+    app.requests.at(-1).resolve({ state: 'ready' })
+    await tick()
+    assert.ok(app.api.beginQuip('hello'))
+    const pending = app.requests.at(-1)
+    app.ctx.pet.visible.set(false)
+    const before = app.requests.length
+    assert.equal(app.api.beginQuip('hidden'), null)
+    assert.equal(app.requests.length, before)
+    pending.resolve({ quip: 'Must stay hidden.' })
+    await tick()
+    assert.equal(app.spoken.length, 0)
+  } finally { app.stop() }
+})
+
+test('changing focused owner suppresses a previous chat response', async () => {
+  const app = await load({ nativePet: true })
+  try {
+    app.requests.at(-1).resolve({ state: 'ready' })
+    await tick()
+    assert.ok(app.api.beginQuip('hello'))
+    const pending = app.requests.at(-1)
+    app.focusedSessionOwner.set({ connectionId: 'local', profile: 'other' })
+    pending.resolve({ quip: 'From the previous profile.' })
+    await tick()
+    assert.equal(app.spoken.length, 0)
+  } finally { app.stop() }
+})
+
+test('owner updates with the same identity do not discard a pending reply', async () => {
+  const app = await load({ nativePet: true })
+  try {
+    app.requests.at(-1).resolve({ state: 'ready' })
+    await tick()
+    assert.ok(app.api.beginQuip('hello'))
+    const pending = app.requests.at(-1)
+    app.focusedSessionOwner.set({ connectionId: 'local', profile: 'default' })
+    pending.resolve({ quip: 'Still here.' })
+    await tick()
+    assert.equal(app.spoken.length, 1)
+  } finally { app.stop() }
+  assert.equal(app.focusedSessionOwner.listeners, 0)
+  assert.equal(app.ctx.pet.visible.listeners, 0)
+})
+
+test('unknown and off-connection focused owners cannot send prompts', async () => {
+  const app = await load({ nativePet: true })
+  try {
+    app.requests.at(-1).resolve({ state: 'ready' })
+    await tick()
+    const before = app.requests.length
+    for (const owner of [null, { connectionId: 'remote', profile: 'default' },
+                         { connectionId: 'local', profile: 'other' }]) {
+      app.focusedSessionOwner.set(owner)
+      assert.equal(app.api.beginQuip('private prompt'), null)
+    }
+    assert.equal(app.requests.length, before)
+  } finally { app.stop() }
+})
 
 test('SDK error envelopes keep bounded codes and cost confirmations', async () => {
   const app = await load()

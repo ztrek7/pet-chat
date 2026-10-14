@@ -497,6 +497,7 @@ let expiryTimer = null
  */
 export function invalidate() {
   latestRequestId = null
+  nativePet()?.clear('quip')
   if (expiryTimer) {
     clearTimeout(expiryTimer)
     expiryTimer = null
@@ -508,6 +509,15 @@ function showBubble(kind, text, dismissMs) {
   if (typeof text !== 'string') return false
   const trimmed = text.trim().slice(0, MAX_BUBBLE_CHARS)
   if (!trimmed) return false
+  const pet = nativePet()
+  if (pet) {
+    if (!pet.visible.get()) return false
+    pet.say(trimmed, {
+      id: 'quip', tone: kind === 'error' ? 'error' : 'info',
+      ttlMs: dismissMs || DEFAULT_DISMISS_MS
+    })
+    return true
+  }
   if (expiryTimer) clearTimeout(expiryTimer)
   $bubble.set({ kind, text: trimmed, at: Date.now() })
   expiryTimer = setTimeout(() => $bubble.set(null), dismissMs || DEFAULT_DISMISS_MS)
@@ -518,10 +528,21 @@ function showBubble(kind, text, dismissMs) {
 // Pet probe
 // ---------------------------------------------------------------------------
 
+function nativePet() {
+  const pet = pluginCtx?.pet
+  return typeof pet?.say === 'function' && typeof pet?.clear === 'function' &&
+    typeof pet?.visible?.get === 'function' ? pet : null
+}
+
+function petVisible() {
+  const pet = nativePet()
+  return pet ? Boolean(pet.visible.get()) : findPetRect() !== null
+}
+
 /**
  * Locate the single visible in-window pet, or return null.
  *
- * The pet's root element carries no class, id, or data attribute — it is a
+ * Legacy hosts only: the root carries no class, id, or data attribute — it is a
  * `position: fixed` div at `z-index: 60` wrapping the sprite `<canvas>`. That
  * z-index is unique to the pet across the whole app, which is what makes this
  * probe specific rather than merely plausible.
@@ -589,7 +610,7 @@ export function beginQuip(draftText) {
   if (host.state.focusedSessionOwner && !owner) return null
   if (owner && owner.connectionId !== (host.state.connectionId?.get() || 'local')) return null
   if ((owner?.profile || host.state.focusedSessionProfile?.get() || host.state.profile.get()) !== host.state.profile.get()) return null
-  if (text.length > 4000 || findPetRect() === null) return null
+  if (text.length > 4000 || !petVisible()) return null
 
   const readiness = readinessState
   if (readiness !== 'ready') {
@@ -630,6 +651,17 @@ function readProfile() {
   }
 }
 
+function readFocusedOwner() {
+  if (host.state.focusedSessionOwner) {
+    const owner = host.state.focusedSessionOwner.get()
+    return owner ? JSON.stringify([owner.connectionId, owner.profile]) : null
+  }
+  return JSON.stringify([
+    host.state.connectionId?.get() || 'local',
+    host.state.focusedSessionProfile?.get() || host.state.profile.get()
+  ])
+}
+
 /**
  * Decide whether a response may be shown. Every gate is checked
  * unconditionally, including the profile identity comparison.
@@ -648,7 +680,7 @@ export function deliver(requestId, profileSnapshot, startedAt, response) {
       : DEFAULT_MAX_RESPONSE_AGE_MS
   if (Date.now() - startedAt > maxAge) return 'expired'
 
-  if (findPetRect() === null) return 'pet_missing'
+  if (!petVisible()) return 'pet_missing'
 
   if (!response) {
     return showBubble('error', errorCopy('backend_unreachable'), DEFAULT_DISMISS_MS)
@@ -831,7 +863,7 @@ export default {
         // bubble itself is position: fixed, so it never affects layout.
         render: () => jsx(QuipBubble, {})
       }
-    ])
+    ].filter(row => row.id !== 'bubble' || !nativePet()))
 
     // Readiness on activation, so the first submission can decide correctly
     // and the one-time Configure notification can fire. No prompt text.
@@ -846,6 +878,21 @@ export default {
     }
     const unsubscribers = [host.state.profile, host.state.connectionId]
       .filter(Boolean).map(state => state.listen(changed))
+    // Focus can move to another owner without switching the backend socket.
+    // A reply from the previous chat must not appear beside that owner's pet.
+    let focusedOwner = readFocusedOwner()
+    const ownerChanged = () => {
+      const next = readFocusedOwner()
+      if (next !== focusedOwner) invalidate()
+      focusedOwner = next
+    }
+    for (const state of [host.state.focusedSessionOwner, host.state.focusedSessionProfile]) {
+      if (state) unsubscribers.push(state.listen(ownerChanged))
+    }
+    const visible = nativePet()?.visible
+    if (typeof visible?.listen === 'function') {
+      unsubscribers.push(visible.listen(() => { if (!visible.get()) invalidate() }))
+    }
 
     ctx.onDispose(() => {
       disposed = true

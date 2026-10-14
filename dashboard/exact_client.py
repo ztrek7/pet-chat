@@ -70,12 +70,21 @@ class ExactResult:
 
 
 def _hermes_version() -> Optional[Tuple[int, int]]:
-    # hermes_cli.version was removed in 0.20; __version__ lives on hermes_cli.
+    # Current Hermes derives source installs from git and packaged installs
+    # from their stamp. The legacy __version__ can report 0.0.0 on a real release.
     try:
-        from hermes_cli import __version__ as raw  # type: ignore
-    except Exception:
+        from hermes_cli.version_info import get_version_info
+    except ImportError:
         try:
-            from hermes_cli.version import __version__ as raw  # type: ignore
+            from hermes_cli import __version__ as raw  # type: ignore
+        except Exception:
+            try:
+                from hermes_cli.version import __version__ as raw  # type: ignore
+            except Exception:
+                return None
+    else:
+        try:
+            raw = get_version_info().base_version
         except Exception:
             return None
     parts = str(raw).split(".")

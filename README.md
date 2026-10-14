@@ -10,8 +10,9 @@ has opinions about both.
 It doesn't touch your actual message. The quip shows up on its own a few seconds
 later, or not at all.
 
-> Checked with Hermes Agent **v0.21.0**; accepts the **0.20.x and 0.21.x**
-> series. Generation still uses an internal API, not a supported LLM contract.
+> Compatibility checked against Hermes Agent **v0.21.7** source with an offline
+> provider transport; accepts **0.20.x and 0.21.x**. Desktop visual operation
+> remains unverified. Generation still uses an internal API.
 
 ## You need a pet first
 
@@ -20,9 +21,9 @@ pet you already have.
 
 So under **Settings → Appearance → Pet**, the pet needs to be switched on *and*
 have an actual pet chosen. On-with-nothing-selected is the usual reason a
-perfectly good install seems to do nothing at all. Keep it in the window, too —
-pop it out to the desktop overlay and Hermes removes the in-window pet, leaving
-nothing to attach to.
+perfectly good install seems to do nothing at all. Current Hermes supplies a
+native bubble API for both the in-window pet and the desktop overlay. Older
+hosts without that API require the pet to stay in the window.
 
 You'll also need a provider already set up in Hermes. Pet Chat won't pick one
 for you, or spend anything until you've chosen the exact model it may use.
@@ -108,10 +109,10 @@ The Python backend and Desktop UI ship in one package.
   values and writes the YAML atomically. Other values are preserved, but YAML
   comments and formatting are not. Do not edit config concurrently with a save.
 
-`desktop/plugin.js` is the settings page and the bubble. The fiddly part is
-finding the pet at all: Hermes gives it no id, class, or data attribute, so this
-identifies it by where it sits and what it stacks above. If the pet ever gets
-restyled upstream, bubbles stop appearing and nothing announces it.
+`desktop/plugin.js` is the settings page and the bubble. Current hosts display
+quips through `ctx.pet.say`, using Hermes' own visibility and cleanup rules.
+Older hosts use a fallback that locates the in-window pet by its canvas and
+positioning; changes to that older renderer can still break the fallback.
 
 `scripts/` maintains legacy standalone Desktop copies. A receipt checks
 ownership for removal. New installs use the host's single-package loader.
@@ -121,9 +122,10 @@ It's for that, not for reading here.
 
 ## Known limits
 
-Quips top out at 200 characters, one at a time, no more than one every eight
-seconds per backend process. Generation accepts Hermes 0.20.x and 0.21.x only.
-Popped-out or hidden pets get nothing. Messages over 4,000 characters are
+The backend caps quips at 200 characters; Hermes' native bubble displays up to
+120. Quips run one at a time, no more than once every eight seconds per backend
+process. Generation accepts Hermes 0.20.x and 0.21.x only. Hidden pets get
+nothing; popped-out pets need the native bubble API. Messages over 4,000 characters are
 skipped, not truncated before scanning. Chats on another profile or connection
 are skipped when they do not match the active plugin backend.
 
@@ -132,8 +134,9 @@ fallback is claimed. The lock coordinates Pet Chat writers, not external editors
 
 ## Checks
 
-Use the Python environment that runs Hermes (it supplies PyYAML, FastAPI and
-httpx). Pet Chat has no separate dependency set or build step.
+Use the Python environment that runs Hermes (it supplies `hermes_yaml`, FastAPI
+and httpx; older releases supply PyYAML). Pet Chat has no separate dependency
+set or build step.
 
 ```bash
 python -m unittest discover -s tests -v
@@ -141,7 +144,15 @@ node --experimental-vm-modules --test tests/test_desktop.mjs
 ```
 
 The regression checks use test doubles and temporary files, not paid models.
-See [AUDIT.md](AUDIT.md) for the live provider check and remaining limits.
+To check current Hermes helpers against a source checkout with its dependencies:
+
+```bash
+python tests/check_hermes.py /path/to/hermes-agent
+```
+
+That check runs the real catalog, cost guard, provider resolver, request builder,
+and SDK against an in-memory HTTP transport. It blocks network connections and
+uses temporary profile settings. See [AUDIT.md](AUDIT.md) for results and limits.
 
 ## Uninstall
 

@@ -4,14 +4,14 @@ Pet Chat has a Hermes backend and a Desktop UI in one installed package.
 
 ## Requirements
 
-- Hermes Agent 0.20.x or 0.21.x (live generation checked on 0.21.0)
+- Hermes Agent 0.20.x or 0.21.x (offline compatibility checked on 0.21.7)
 - A provider configured and authenticated in Hermes
 - Git available to Hermes
 - macOS or Linux for settings writes
 - A pet enabled and selected under **Settings → Appearance → Pet**
 
-Pet Chat only anchors bubbles to the in-window pet. A popped-out overlay pet
-does not display bubbles.
+Current Hermes displays quips through its native pet bubble, including the
+popped-out overlay. On older hosts without that API, keep the pet in the window.
 
 ## 1. Install the Hermes plugin
 
@@ -87,7 +87,7 @@ own plugin settings.
   installation or update.
 - **Quips unavailable:** confirm that Hermes is 0.20.x or 0.21.x.
 - **No bubble:** confirm that a provider/model pair is saved and the pet is
-  visible in the Hermes window.
+  visible. Older hosts require the pet to stay in the Hermes window.
 - **Provider failed:** Pet Chat does not retry with another provider or model.
 - **Missing custom provider:** name the endpoint in Hermes. The bare `custom`
   route is excluded because it can fall through to another provider.
