@@ -17,9 +17,9 @@ class CompatibilityTests(unittest.TestCase):
         host = ModuleType("hermes_cli")
         host.__version__ = "0.0.0"
         version = ModuleType("hermes_cli.version_info")
-        version.get_version_info = lambda: SimpleNamespace(base_version="0.21.7")
+        version.get_version_info = lambda: SimpleNamespace(base_version="0.22.5")
         with patch.dict(sys.modules, {"hermes_cli": host, "hermes_cli.version_info": version}):
-            self.assertEqual(self.ec._hermes_version(), (0, 21))
+            self.assertEqual(self.ec._hermes_version(), (0, 22))
 
     def test_unknown_canonical_version_cannot_use_stale_legacy_version(self):
         host = ModuleType("hermes_cli")
@@ -29,11 +29,11 @@ class CompatibilityTests(unittest.TestCase):
         with patch.dict(sys.modules, {"hermes_cli": host, "hermes_cli.version_info": version}):
             self.assertIsNone(self.ec._hermes_version())
 
-    def test_old_host_without_version_api_still_works(self):
+    def test_missing_authoritative_version_api_fails_closed(self):
         host = ModuleType("hermes_cli")
         host.__version__ = "0.20.0"
         with patch.dict(sys.modules, {"hermes_cli": host, "hermes_cli.version_info": None}):
-            self.assertEqual(self.ec._hermes_version(), (0, 20))
+            self.assertIsNone(self.ec._hermes_version())
 
     def test_backend_uses_host_yaml_without_pyyaml(self):
         host_yaml = ModuleType("hermes_yaml")
