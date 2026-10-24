@@ -80,3 +80,44 @@ route and equivalent regression proof. The validator reports private-import
 warnings; this candidate is not claimed ready for official catalog admission.
 The [LLM API documentation](https://hermes-agent.nousresearch.com/docs/developer-guide/plugin-llm-access)
 explains host fallback. Desktop visual behavior remains unverified.
+
+## Public API review (0.22.5)
+
+The follow-up review removed the obsolete `hermes_cli.__version__` and
+`hermes_cli.version.__version__` fallbacks. Missing/unreadable authoritative
+version information fails closed; a stale constant cannot enable generation.
+
+Remaining imports are grouped by behavior, not hidden from validation:
+
+- `hermes_cli.version_info.get_version_info`: recognizes source and packaged
+  builds before direct API execution. The manifest also gates normal loading.
+  No documented plugin version-query equivalent was found.
+- `agent.auxiliary_client.resolve_provider_client` / `_build_call_kwargs`:
+  resolve the exact chosen route and prepare one bounded request. `ctx.llm` is
+  public, but owns retry/fallback behavior and exposes no strict zero-retry,
+  no-fallback switch. Changing to it would weaken the existing privacy/cost
+  promise; new provider/model grants are also outside this migration.
+- `hermes_cli.model_switch.list_authenticated_providers`: preserves the scoped
+  authenticated/custom-provider picker. `providers.list_providers()` is public
+  registration metadata, not that inventory.
+- `agent.models_dev` helpers/constants: text-output and reasoning-effort metadata.
+  `ProviderProfile` metadata is not equivalent to the live catalog and its
+  reasoning choices.
+- `hermes_cli.model_cost_guard.expensive_model_warning`: host cost classification
+  behind explicit confirmation. No equivalent public cost-warning function was
+  found; dropping it would weaken the confirmation gate.
+- `hermes_yaml`: preserves the host's YAML schema for the existing auxiliary
+  settings and revision-checked raw-file transaction. `ctx.get_config/set_config`
+  owns only `plugins.entries.<id>.settings`, not `auxiliary.pet_chat`;
+  `load_config/save_config` normalizes the global config. PyYAML is not a drop-in
+  equivalent for this host's duplicate-key and scalar behavior.
+
+These are target-version adapters, not stable public extension points. The
+proper upstream requests are a strict generation lane, authenticated model
+metadata/cost surface, and a public auxiliary-settings transaction. Do not
+monkeypatch the host or suppress validator findings to simulate compliance.
+
+Review references: [PluginContext](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/hermes_cli/plugins.py),
+[public PM operations](https://hermes-agent.nousresearch.com/docs/reference/package-management#python-operation-interfaces),
+[LLM contract](https://hermes-agent.nousresearch.com/docs/developer-guide/plugin-llm-access),
+[provider usage contract](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/providers/base.py).
