@@ -42,12 +42,15 @@ and package removal. It does not impersonate the package manager's dependency
 transaction or start Desktop. Host validation warnings are reported, not hidden.
 
 The same mock suite also passes in a fresh test venv without Hermes on its
-import path. A real `plugins install` rehearsal against the committed local
-package, with a disposable home and enablement/dependencies disabled, passed
-manifest/version admission but stopped while bootstrapping Hermes PM: sandbox
-DNS could not download its runtime wheels. Full transactional installation,
-update, and removal remain unverified; runtime lifecycle checks above are not
-a substitute for that end-to-end check.
+import path. Full standard lifecycle verification subsequently passed through
+the real CLI handlers and PM transactions in a separate official Hermes source
+checkout with isolated HOME, config, caches and runtime. It covered install
+without enablement, enable, disable, update, re-enable and remove. Update kept
+disabled state and a synthetic user file; removal cleared package/selection
+metadata and retained unrelated configuration. No host functions were mocked.
+Public package downloads used the approved normal-host executor after the
+sandbox-only attempt could not resolve DNS. No live installation was touched.
+These tests do not cover a running Desktop, remote gateway, or provider account.
 
 Desktop tests use SDK doubles, not a visual end-to-end session. No live plugin
 replacement, active-session restart, or persistent permission change was made
