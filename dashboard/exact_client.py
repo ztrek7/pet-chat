@@ -24,7 +24,7 @@ from typing import Any, Optional, Tuple
 
 #: Hermes (major, minor) versions checked against this adapter.
 #: Widening this is a preflight exercise (Gate E), not an edit.
-SUPPORTED_HERMES = frozenset({(0, 20), (0, 21)})
+SUPPORTED_HERMES = frozenset({(0, 22)})
 
 #: Routing values that name a router rather than a concrete provider. Rejected
 #: *before* resolution so a virtual name can never reach Hermes' auto chain.

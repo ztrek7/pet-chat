@@ -24,9 +24,7 @@ import {
   PALETTE_AREA,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA,
-  STATUSBAR_AREAS,
   SegmentedControl,
-  atom,
   host,
   useValue
 } from '@hermes/plugin-sdk'
@@ -481,11 +479,9 @@ function refreshReadiness() {
 // Bubble state
 // ---------------------------------------------------------------------------
 
-const $bubble = atom(null)
 
 let requestSeq = 0
 let latestRequestId = null
-let expiryTimer = null
 
 /**
  * Invalidate any in-flight request and clear the bubble.
@@ -498,11 +494,6 @@ let expiryTimer = null
 export function invalidate() {
   latestRequestId = null
   nativePet()?.clear('quip')
-  if (expiryTimer) {
-    clearTimeout(expiryTimer)
-    expiryTimer = null
-  }
-  $bubble.set(null)
 }
 
 function showBubble(kind, text, dismissMs) {
@@ -518,10 +509,7 @@ function showBubble(kind, text, dismissMs) {
     })
     return true
   }
-  if (expiryTimer) clearTimeout(expiryTimer)
-  $bubble.set({ kind, text: trimmed, at: Date.now() })
-  expiryTimer = setTimeout(() => $bubble.set(null), dismissMs || DEFAULT_DISMISS_MS)
-  return true
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -536,54 +524,7 @@ function nativePet() {
 
 function petVisible() {
   const pet = nativePet()
-  return pet ? Boolean(pet.visible.get()) : findPetRect() !== null
-}
-
-/**
- * Locate the single visible in-window pet, or return null.
- *
- * Legacy hosts only: the root carries no class, id, or data attribute — it is a
- * `position: fixed` div at `z-index: 60` wrapping the sprite `<canvas>`. That
- * z-index is unique to the pet across the whole app, which is what makes this
- * probe specific rather than merely plausible.
- *
- * Zero or multiple candidates fail closed. That also covers the popped-out
- * overlay case for free: core unmounts the in-window pet while the overlay
- * owns the mascot, so there is nothing to anchor to and no bubble appears.
- */
-export function findPetRect(doc, view) {
-  const documentRef = doc || (typeof document === 'undefined' ? null : document)
-  const windowRef = view || (typeof window === 'undefined' ? null : window)
-  if (!documentRef || !windowRef || typeof windowRef.getComputedStyle !== 'function') {
-    return null
-  }
-
-  const found = []
-  // Canvases are rare; divs are not. Starting from the sprite keeps this cheap
-  // enough to run on every response.
-  for (const canvas of documentRef.querySelectorAll('canvas')) {
-    let node = canvas.parentElement
-    while (node) {
-      const style = windowRef.getComputedStyle(node)
-      if (style.position === 'fixed' && String(style.zIndex) === '60') {
-        if (
-          style.visibility !== 'hidden' &&
-          style.display !== 'none' &&
-          Number(style.opacity) !== 0
-        ) {
-          const rect = node.getBoundingClientRect()
-          if (rect.width > 0 && rect.height > 0 && !found.includes(node)) {
-            found.push(node)
-          }
-        }
-        break
-      }
-      node = node.parentElement
-    }
-  }
-
-  if (found.length !== 1) return null
-  return found[0].getBoundingClientRect()
+  return pet ? Boolean(pet.visible.get()) : false
 }
 
 // ---------------------------------------------------------------------------
@@ -703,83 +644,6 @@ export function deliver(requestId, profileSnapshot, startedAt, response) {
   return 'silent'
 }
 
-// ---------------------------------------------------------------------------
-// Bubble rendering
-// ---------------------------------------------------------------------------
-
-function prefersReducedMotion() {
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  } catch {
-    return false
-  }
-}
-
-/** Clamp the bubble into the viewport without ever affecting layout. */
-export function bubbleBox(petRect, viewport) {
-  const width = Math.min(260, Math.max(160, viewport.width - 24))
-  const estimatedHeight = 64
-  const gap = 10
-  let left = petRect.left + petRect.width / 2 - width / 2
-  left = Math.max(12, Math.min(left, viewport.width - width - 12))
-  let top = petRect.top - estimatedHeight - gap
-  if (top < 12) top = Math.min(petRect.bottom + gap, viewport.height - estimatedHeight - 12)
-  top = Math.max(12, top)
-  return { left, top, width }
-}
-
-function QuipBubble() {
-  const bubble = useValue($bubble)
-  const [rect, setRect] = useState(null)
-
-  useEffect(() => {
-    if (!bubble) {
-      setRect(null)
-      return undefined
-    }
-    // The pet roams, so the anchor is re-read on a timer rather than once.
-    const track = () => {
-      const next = findPetRect()
-      setRect(next)
-      // The pet can leave while the bubble is up; that is a suppression case.
-      if (next === null) $bubble.set(null)
-    }
-    track()
-    const id = setInterval(track, 250)
-    return () => clearInterval(id)
-  }, [bubble])
-
-  if (!bubble || !rect) return null
-
-  const viewport = { width: window.innerWidth, height: window.innerHeight }
-  const box = bubbleBox(rect, viewport)
-  const reduced = prefersReducedMotion()
-
-  return jsx('div', {
-    role: 'status',
-    style: {
-      position: 'fixed',
-      left: `${box.left}px`,
-      top: `${box.top}px`,
-      width: `${box.width}px`,
-      zIndex: 61,
-      pointerEvents: 'auto',
-      transition: reduced ? 'none' : 'opacity 160ms ease-out'
-    },
-    children: jsx('button', {
-      type: 'button',
-      'aria-label': 'Dismiss Pet Chat bubble',
-      onClick: () => $bubble.set(null),
-      className: [
-        'w-full cursor-pointer rounded-[6px] border px-2.5 py-1.5 text-left text-[0.6875rem] leading-snug',
-        'border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) shadow-sm',
-        bubble.kind === 'error' ? 'text-(--ui-text-tertiary)' : 'text-(--ui-text-secondary)'
-      ].join(' '),
-      children: bubble.text
-    })
-  })
-}
-
 /**
  * One non-repeating nudge when the plugin is on but no pair is saved.
  * Only a dismissal marker is persisted — never routing.
@@ -855,15 +719,8 @@ export default {
           }
         }
       },
-      {
-        id: 'bubble',
-        area: STATUSBAR_AREAS.right,
-        order: 200,
-        // The status bar is only a mount point that is always present; the
-        // bubble itself is position: fixed, so it never affects layout.
-        render: () => jsx(QuipBubble, {})
-      }
-    ].filter(row => row.id !== 'bubble' || !nativePet()))
+
+    ])
 
     // Readiness on activation, so the first submission can decide correctly
     // and the one-time Configure notification can fire. No prompt text.

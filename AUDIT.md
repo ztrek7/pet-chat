@@ -1,3 +1,5 @@
+> Historical audit. For the current 0.22.5 candidate, see [COMPATIBILITY.md](COMPATIBILITY.md).
+
 # Pet Chat audit — 2026-10-13
 
 Checked the latest published release, Hermes **v0.21.7**, at source commit

@@ -46,8 +46,8 @@ The Python backend and Desktop UI ship in one package.
 
 `desktop/plugin.js` is the settings page and the bubble. Current hosts display
 quips through `ctx.pet.say`, using Hermes' own visibility and cleanup rules.
-Older hosts use a fallback that locates the in-window pet by its canvas and
-positioning; changes to that older renderer can still break the fallback.
+Hosts without the native API fail closed. The plugin does not locate or modify
+Hermes’ internal pet DOM.
 
 `scripts/` maintains legacy standalone Desktop copies. A receipt checks
 ownership for removal. New installs use the host's single-package loader.
@@ -59,7 +59,7 @@ It's for that, not for reading here.
 
 The backend caps quips at 200 characters; Hermes' native bubble displays up to
 120. Quips run one at a time, no more than once every eight seconds per backend
-process. Generation accepts Hermes 0.20.x and 0.21.x only. Hidden pets get
+process. Generation accepts Hermes 0.22.x; the package requires at least 0.22.5. Hidden pets get
 nothing; popped-out pets need the native bubble API. Messages over 4,000 characters are
 skipped, not truncated before scanning. Chats on another profile or connection
 are skipped when they do not match the active plugin backend.

@@ -175,11 +175,23 @@ test('disable disposes listeners and suppresses late readiness', async () => {
   assert.equal(app.api.beginQuip('hello'), null)
 })
 
-test('newest scope wins; sends are unchanged; no off-profile egress', async () => {
+test('missing native pet API fails closed without probing host DOM', async () => {
   const app = await load()
   try {
+    app.requests.at(-1).resolve({ state: 'ready' })
+    await tick()
+    app.document.querySelectorAll = () => { throw new Error('must not inspect host DOM') }
+    const before = app.requests.length
+    assert.equal(app.api.beginQuip('hello'), null)
+    assert.equal(app.requests.length, before)
+  } finally { app.stop() }
+})
+
+test('newest scope wins; sends are unchanged; no off-profile egress', async () => {
+  const app = await load({ nativePet: true })
+  try {
     app.profile.set('other')
-    app.focusedSessionProfile.set('other')
+    app.focusedSessionOwner.set({ connectionId: 'local', profile: 'other' })
     const newest = app.requests.at(-1)
     newest.resolve({ state: 'not_configured' })
     await tick()
@@ -187,7 +199,7 @@ test('newest scope wins; sends are unchanged; no off-profile egress', async () =
     await tick()
     assert.equal(app.api.getReadiness(), 'not_configured')
     app.profile.set('default')
-    app.focusedSessionProfile.set('default')
+    app.focusedSessionOwner.set({ connectionId: 'local', profile: 'default' })
     app.requests.at(-1).resolve({ state: 'ready' })
     await tick()
     assert.equal(app.api.getReadiness(), 'ready')
@@ -198,12 +210,12 @@ test('newest scope wins; sends are unchanged; no off-profile egress', async () =
     assert.equal(request.path, '/quip')
     assert.deepEqual(Object.keys(request.options.body).sort(), ['prompt', 'request_id'])
     const before = app.requests.length
-    app.focusedSessionProfile.set('other')
+    app.focusedSessionOwner.set({ connectionId: 'local', profile: 'other' })
     assert.equal(capture(draft), draft)
     assert.equal(app.requests.length, before)
-    app.focusedSessionProfile.set('default')
+    app.focusedSessionOwner.set({ connectionId: 'local', profile: 'default' })
     assert.equal(app.api.beginQuip('x'.repeat(4001)), null)
-    app.document.querySelectorAll = () => []
+    app.ctx.pet.visible.set(false)
     assert.equal(app.api.beginQuip('pet is absent'), null)
     assert.equal(app.requests.length, before)
     app.connectionId.set('remote')

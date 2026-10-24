@@ -53,8 +53,8 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(self.ec._retries_are_disabled(SimpleNamespace(max_retries=retries)), accepted)
 
     def test_unknown_hermes_version_fails_closed(self):
-        self.assertEqual(self.ec.SUPPORTED_HERMES, {(0, 20), (0, 21)})
-        for version in (None, (0, 19), (0, 22), (1, 0)):
+        self.assertEqual(self.ec.SUPPORTED_HERMES, {(0, 22)})
+        for version in (None, (0, 19), (0, 21), (0, 23), (1, 0)):
             with patch.object(self.ec, "_hermes_version", return_value=version):
                 self.assertFalse(self.ec.is_supported())
 

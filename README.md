@@ -4,8 +4,8 @@ A Hermes Desktop plugin that gives your existing pet short reactions to your pro
 
 Your pet has opinions now. Snarky by default; your actual message stays unchanged.
 
-> Accepts Hermes Agent **0.20.x and 0.21.x**. Source/API compatibility was checked
-> offline against **v0.21.7**; **Desktop visual operation remains unverified**.
+> Accepts Hermes Agent **0.22.5–0.22.x**. Source/API compatibility was checked
+> offline against **v0.22.5**; **Desktop visual operation remains unverified**.
 > Generation uses an internal Hermes API. See the [audit](AUDIT.md) for the limits.
 
 ## Install and first use
@@ -14,18 +14,19 @@ You need macOS or Linux, a provider configured in Hermes, and a pet enabled
 **and selected** under **Settings → Appearance → Pet**. Pet Chat supplies no sprites.
 
 ```bash
-hermes plugins install https://github.com/ztrek7/pet-chat
+hermes plugins install https://github.com/ztrek7/pet-chat --no-enable
+hermes plugins enable pet-chat
 ```
 
-1. Fully quit and reopen Hermes Desktop. A gateway restart alone is not enough.
-2. Turn on **Pet Chat** in **Settings → Plugins**, then open it from the sidebar.
+1. Use **Capabilities → Plugins → Rescan**. Follow Hermes’ activation notice;
+   if backend routes remain unavailable, fully quit and reopen Desktop when safe.
+2. Turn on **Pet Chat** in **Capabilities → Plugins**, then open it from the sidebar.
 3. Choose the exact provider/model pair and an attitude, then save.
 4. Send a short prompt with your pet visible. Eligible prompts can receive a
    one-line reaction; no model is selected or called until you save a pair.
 
 Current Desktop loads both halves from the same package; no second Desktop
-copy is needed. Older hosts without the native pet bubble API require the pet
-to stay in the window. See [INSTALL.md](INSTALL.md) for profiles and troubleshooting.
+copy is needed. The native pet API is required; older DOM-based pet detection is removed. See [INSTALL.md](INSTALL.md) for profiles and troubleshooting.
 
 ## Attitudes
 
@@ -68,7 +69,7 @@ Update, then fully restart Hermes Desktop:
 hermes plugins update pet-chat
 ```
 
-For an ordinary single-package install, turn Pet Chat off in **Settings → Plugins**,
+For an ordinary single-package install, turn Pet Chat off in **Capabilities → Plugins**,
 then remove it and restart Desktop:
 
 ```bash
@@ -84,7 +85,8 @@ Desktop copy; ordinary installs do not need them.
 
 - [Installation, profiles, and troubleshooting](INSTALL.md)
 - [Implementation, provider safeguards, and offline checks](docs/REFERENCE.md)
-- [Audit results and unverified behavior](AUDIT.md)
+- [Current compatibility and lifecycle checks](COMPATIBILITY.md)
+- [Historical audit results and unverified behavior](AUDIT.md)
 - [Report a problem](https://github.com/ztrek7/pet-chat/issues)
 
 MIT. See [LICENSE](LICENSE).

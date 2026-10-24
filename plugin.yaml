@@ -1,7 +1,6 @@
 name: pet-chat
-version: 0.1.0-dev
+version: 0.2.0
 kind: standalone
-compatibility: ">=0.20.0,<0.22.0"
-requires_hermes: ">=0.20.0,<0.22.0"
+requires_hermes: ">=0.22.5,<0.23.0"
 description: Lets your Hermes Desktop pet read your prompts and talk back.
-entrypoint: __init__.py
+homepage: https://github.com/ztrek7/pet-chat

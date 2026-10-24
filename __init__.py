@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 PLUGIN_ID = "pet-chat"
-PLUGIN_VERSION = "0.1.0-dev"
+PLUGIN_VERSION = "0.2.0"
 
 #: Config key for the plugin-owned auxiliary task: ``auxiliary.pet_chat.*``.
 AUX_TASK_KEY = "pet_chat"

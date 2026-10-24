@@ -8,3 +8,12 @@ __pycache__/
 .claude/settings.local.json
 unplanned.md
 FEATURES.md
+
+# Local configuration, credentials, runtime state, and test environments
+.env
+.env.*
+!.env.example
+.venv/
+auth.json
+config.yaml
+*.log

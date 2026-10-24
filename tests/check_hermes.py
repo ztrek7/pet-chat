@@ -77,7 +77,7 @@ class HermesIntegrationTests(unittest.TestCase):
         )
         self.assertTrue(manifest.get("requires_hermes"))
         self.assertIsNone(requires_hermes_error(manifest))
-        with patch("hermes_cli.plugins_manifest.running_hermes_version", return_value="0.22.0"):
+        with patch("hermes_cli.plugins_manifest.running_hermes_version", return_value="0.23.0"):
             self.assertIsNotNone(requires_hermes_error(manifest))
 
     def test_settings_to_quip_through_real_host_helpers(self):

@@ -1,15 +1,11 @@
-# Finish setting up Pet Chat
+Pet Chat is installed as one backend + Desktop package.
 
-The Hermes plugin is installed. Current Desktop loads its UI from the same
-package; no second Desktop copy is needed. If you have an old standalone
-copy, use the migration steps in INSTALL.md first.
+1. Enable the backend with `hermes plugins enable pet-chat` after reviewing it.
+2. Rescan in Capabilities → Plugins, then enable the Pet Chat Desktop component.
+3. Follow Hermes’ activation notice. If routes remain unavailable, fully quit and
+   reopen Desktop when safe; a gateway restart alone may not reload its local API.
+4. Enable and select a pet in Settings → Appearance → Pet.
+5. Open Pet Chat and save an exact provider/model pair before sending a prompt.
 
-## Restart, enable, and configure
-
-Fully quit and reopen Hermes Desktop. Then open **Settings → Plugins**, turn on
-**Pet Chat**, and choose **Pet Chat** in the sidebar.
-
-Select a provider/model pair and an attitude, then save. Pet Chat does not
-select a model or send anything until you save.
-
-Requires Hermes Agent 0.20.x or 0.21.x. Settings writes require macOS or Linux.
+Quips send at most 400 prompt characters to your chosen paid provider. No model
+is chosen automatically. See README.md and COMPATIBILITY.md before use.
